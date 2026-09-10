@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -46,14 +48,14 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	file, header, err := r.FormFile("thumbnail")
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to parse form file", err)
+		respondWithError(w, http.StatusBadRequest, "Unable to parse thumbnail", err)
 		return
 	}
 	defer file.Close()
 
-	mimeType := header.Header.Get("Content-Type")
+	contentType := header.Header.Get("Content-Type")
 
-	mediaType, _, err := mime.ParseMediaType(mimeType)
+	mediaType, _, err := mime.ParseMediaType(contentType)
 	if mediaType != "image/jpeg" && mediaType != "image/png" {
 		respondWithError(w, http.StatusBadRequest, "Invalid media type", errors.New("thumbnail must be jpeg or png"))
 		return
@@ -61,7 +63,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, "Couldn't get video", err)
+		respondWithError(w, http.StatusNotFound, "Couldn't get video", err)
 		return
 	}
 	if video.UserID != userID {
@@ -69,13 +71,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	fileExtensions, err := mime.ExtensionsByType(mimeType)
+	fileExtensions, err := mime.ExtensionsByType(contentType)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't get file extension", err)
 		return
 	}
 
-	videoThumbnailPath := videoIDString + fileExtensions[0]
+	key := make([]byte, 32)
+	rand.Read(key)
+	keyString := base64.RawURLEncoding.EncodeToString(key)
+
+	videoThumbnailPath := keyString + fileExtensions[0]
 
 	fullThumbnailPath := filepath.Join(cfg.assetsRoot, videoThumbnailPath)
 
@@ -95,6 +101,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	video.ThumbnailURL = &thumbnailURL
 
 	err = cfg.db.UpdateVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't update video", err)
+		return
+	}
 
 	respondWithJSON(w, http.StatusOK, video)
 }
