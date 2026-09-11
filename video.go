@@ -60,3 +60,14 @@ func getVideoAspectRatioPrefix(aspectRetio string) string {
 		return "other"
 	}
 }
+
+func processVideoForFastStart(filePath string) (string, error) {
+	outputFilePath := filePath + ".processing"
+	command := exec.Command("ffmpeg", "-i", filePath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", outputFilePath)
+
+	if err := command.Run(); err != nil {
+		return "", err
+	}
+
+	return outputFilePath, nil
+}

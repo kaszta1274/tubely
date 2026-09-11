@@ -103,16 +103,30 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 
 	videoKey := make([]byte, 32)
 	rand.Read(videoKey)
-	videoKeyFilename := ratioPrefix + "/" + base64.RawURLEncoding.EncodeToString(videoKey) + ".mp4"
+	videoKeyFilePath := ratioPrefix + "/" + base64.RawURLEncoding.EncodeToString(videoKey) + ".mp4"
+
+	processedVideoFilePath, err := processVideoForFastStart(tempVideoFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't proccess video for fast start", err)
+		return
+	}
+
+	processedVideoFile, err := os.Open(processedVideoFilePath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't open proccessed video", err)
+		return
+	}
+	defer os.Remove(processedVideoFile.Name())
+	defer processedVideoFile.Close()
 
 	cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
-		Key:         &videoKeyFilename,
-		Body:        tempVideoFile,
+		Key:         &videoKeyFilePath,
+		Body:        processedVideoFile,
 		ContentType: &contentType,
 	})
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoKeyFilename)
+	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoKeyFilePath)
 	video.VideoURL = &videoURL
 
 	err = cfg.db.UpdateVideo(video)
