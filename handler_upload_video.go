@@ -62,6 +62,10 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	contentType := header.Header.Get("Content-Type")
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Couldn't parse media type", err)
+		return
+	}
 	if mediaType != "video/mp4" {
 		respondWithError(w, http.StatusBadRequest, "Invalid media type", errors.New("video must be an mp4"))
 		return
@@ -81,15 +85,25 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	tempVideoFile.Sync()
+
 	_, err = tempVideoFile.Seek(0, io.SeekStart)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't reset the tempFile's file pointer to the beginning", err)
 		return
 	}
 
+	aspectRatio, err := getVideoAspectRatio(tempVideoFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get video aspect ratio of the temp file", err)
+		return
+	}
+
+	ratioPrefix := getVideoAspectRatioPrefix(aspectRatio)
+
 	videoKey := make([]byte, 32)
 	rand.Read(videoKey)
-	videoKeyFilename := base64.RawURLEncoding.EncodeToString(videoKey) + ".mp4"
+	videoKeyFilename := ratioPrefix + "/" + base64.RawURLEncoding.EncodeToString(videoKey) + ".mp4"
 
 	cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
