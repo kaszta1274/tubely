@@ -119,14 +119,18 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	defer os.Remove(processedVideoFile.Name())
 	defer processedVideoFile.Close()
 
-	cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
+	_, err = cfg.s3Client.PutObject(r.Context(), &s3.PutObjectInput{
 		Bucket:      &cfg.s3Bucket,
 		Key:         &videoKeyFilePath,
 		Body:        processedVideoFile,
 		ContentType: &contentType,
 	})
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't upload video to s3", err)
+		return
+	}
 
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, videoKeyFilePath)
+	videoURL := fmt.Sprintf("%s,%s", cfg.s3Bucket, videoKeyFilePath)
 	video.VideoURL = &videoURL
 
 	err = cfg.db.UpdateVideo(video)
@@ -135,5 +139,11 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	respondWithJSON(w, http.StatusOK, video)
+	signedVideo, err := cfg.dbVideoToSignedVideo(video)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create signed video", err)
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, signedVideo)
 }
